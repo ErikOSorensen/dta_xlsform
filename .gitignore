@@ -75,8 +75,10 @@ Thumbs.db
 
 # Project specific
 *.dta
+*.sav
 *.xlsx
 !example_*.dta
+!example_*.sav
 !example_*.xlsx
 
 # Logs

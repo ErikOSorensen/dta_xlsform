@@ -1,7 +1,7 @@
 """
-Stata to XLSForm Converter
+Statistical Data to XLSForm Converter
 
-A Python library to read Stata .dta files and convert them to XLSForm format.
+A Python library to read Stata .dta and SPSS .sav files and convert them to XLSForm format.
 XLSForm is a standard for creating forms for data collection tools like ODK and KoboToolbox.
 """
 
@@ -11,57 +11,78 @@ from typing import Dict, List, Tuple, Optional
 import os
 
 
-class StataToXLSForm:
+class DataToXLSForm:
     """
-    Main class for converting Stata .dta files to XLSForm format.
+    Main class for converting Stata .dta or SPSS .sav files to XLSForm format.
 
     Attributes:
-        dta_path (str): Path to the Stata .dta file
-        df (pd.DataFrame): The data from the Stata file
-        metadata (pyreadstat.metadata_container): Metadata from the Stata file
+        file_path (str): Path to the data file (.dta or .sav)
+        file_type (str): Type of file ('stata' or 'spss')
+        df (pd.DataFrame): The data from the file
+        metadata (pyreadstat.metadata_container): Metadata from the file
         variable_labels (Dict[str, str]): Dictionary of variable labels
         value_labels (Dict[str, Dict[int, str]]): Dictionary of value labels
     """
 
-    def __init__(self, dta_path: str):
+    def __init__(self, file_path: str, file_type: Optional[str] = None):
         """
-        Initialize the converter with a Stata file.
+        Initialize the converter with a Stata or SPSS file.
 
         Args:
-            dta_path (str): Path to the Stata .dta file
+            file_path (str): Path to the data file (.dta or .sav)
+            file_type (str, optional): File type ('stata' or 'spss').
+                                      If None, will be inferred from extension.
 
         Raises:
-            FileNotFoundError: If the .dta file doesn't exist
-            ValueError: If the file is not a valid Stata file
+            FileNotFoundError: If the file doesn't exist
+            ValueError: If the file is not a valid Stata or SPSS file
         """
-        if not os.path.exists(dta_path):
-            raise FileNotFoundError(f"File not found: {dta_path}")
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
 
-        self.dta_path = dta_path
+        self.file_path = file_path
         self.df = None
         self.metadata = None
         self.variable_labels = {}
         self.value_labels = {}
 
-        self._read_stata_file()
+        # Infer file type from extension if not provided
+        if file_type is None:
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext == '.dta':
+                self.file_type = 'stata'
+            elif ext == '.sav':
+                self.file_type = 'spss'
+            else:
+                raise ValueError(f"Cannot infer file type from extension '{ext}'. "
+                               "Please specify file_type='stata' or file_type='spss'")
+        else:
+            self.file_type = file_type.lower()
 
-    def _read_stata_file(self):
-        """Read the Stata file and extract metadata."""
+        self._read_file()
+
+    def _read_file(self):
+        """Read the data file and extract metadata."""
         try:
-            # Try reading with different encodings to handle Scandinavian and other special characters
-            encodings = ['utf-8', 'windows-1252', 'iso-8859-1', 'latin1']
+            if self.file_type == 'stata':
+                # Try reading with different encodings to handle Scandinavian and other special characters
+                encodings = ['utf-8', 'windows-1252', 'iso-8859-1', 'latin1']
 
-            for encoding in encodings:
-                try:
-                    self.df, self.metadata = pyreadstat.read_dta(
-                        self.dta_path,
-                        encoding=encoding
-                    )
-                    break  # If successful, exit the loop
-                except (UnicodeDecodeError, Exception) as enc_error:
-                    if encoding == encodings[-1]:  # Last encoding attempt
-                        raise enc_error
-                    continue  # Try next encoding
+                for encoding in encodings:
+                    try:
+                        self.df, self.metadata = pyreadstat.read_dta(
+                            self.file_path,
+                            encoding=encoding
+                        )
+                        break  # If successful, exit the loop
+                    except (UnicodeDecodeError, Exception) as enc_error:
+                        if encoding == encodings[-1]:  # Last encoding attempt
+                            raise enc_error
+                        continue  # Try next encoding
+            elif self.file_type == 'spss':
+                self.df, self.metadata = pyreadstat.read_sav(self.file_path)
+            else:
+                raise ValueError(f"Unsupported file type: {self.file_type}")
 
             # Extract variable labels
             if self.metadata.column_names_to_labels:
@@ -79,7 +100,7 @@ class StataToXLSForm:
                         self.value_labels[var_name] = self.metadata.value_labels[label_value]
 
         except Exception as e:
-            raise ValueError(f"Error reading Stata file: {str(e)}")
+            raise ValueError(f"Error reading {self.file_type.upper()} file: {str(e)}")
 
     def _infer_question_type(self, var_name: str, dtype: str) -> str:
         """
@@ -178,7 +199,7 @@ class StataToXLSForm:
         """
         if form_id is None:
             # Use filename without extension as form_id
-            form_id = os.path.splitext(os.path.basename(self.dta_path))[0]
+            form_id = os.path.splitext(os.path.basename(self.file_path))[0]
 
         if form_title is None:
             form_title = form_id.replace('_', ' ').title()
@@ -234,9 +255,41 @@ class StataToXLSForm:
         return pd.DataFrame(info_data)
 
 
+# Backward compatibility: Keep old class name as alias
+StataToXLSForm = DataToXLSForm
+
+
+def data_to_xlsform(file_path: str, output_path: str,
+                    form_id: Optional[str] = None,
+                    form_title: Optional[str] = None,
+                    file_type: Optional[str] = None) -> DataToXLSForm:
+    """
+    Convenience function to convert a Stata or SPSS file to XLSForm in one step.
+
+    Args:
+        file_path (str): Path to the data file (.dta or .sav)
+        output_path (str): Path where the XLSForm Excel file should be saved
+        form_id (str, optional): Unique form identifier
+        form_title (str, optional): Human-readable form title
+        file_type (str, optional): File type ('stata' or 'spss').
+                                   If None, inferred from extension.
+
+    Returns:
+        DataToXLSForm: The converter instance (can be used for further inspection)
+
+    Example:
+        >>> converter = data_to_xlsform('data.dta', 'form.xlsx')
+        >>> converter = data_to_xlsform('data.sav', 'form.xlsx')
+        >>> print(converter.get_variable_info())
+    """
+    converter = DataToXLSForm(file_path, file_type)
+    converter.to_xlsform(output_path, form_id, form_title)
+    return converter
+
+
 def stata_to_xlsform(dta_path: str, output_path: str,
                      form_id: Optional[str] = None,
-                     form_title: Optional[str] = None) -> StataToXLSForm:
+                     form_title: Optional[str] = None) -> DataToXLSForm:
     """
     Convenience function to convert a Stata file to XLSForm in one step.
 
@@ -247,12 +300,32 @@ def stata_to_xlsform(dta_path: str, output_path: str,
         form_title (str, optional): Human-readable form title
 
     Returns:
-        StataToXLSForm: The converter instance (can be used for further inspection)
+        DataToXLSForm: The converter instance (can be used for further inspection)
 
     Example:
         >>> converter = stata_to_xlsform('data.dta', 'form.xlsx')
         >>> print(converter.get_variable_info())
     """
-    converter = StataToXLSForm(dta_path)
-    converter.to_xlsform(output_path, form_id, form_title)
-    return converter
+    return data_to_xlsform(dta_path, output_path, form_id, form_title, file_type='stata')
+
+
+def spss_to_xlsform(sav_path: str, output_path: str,
+                    form_id: Optional[str] = None,
+                    form_title: Optional[str] = None) -> DataToXLSForm:
+    """
+    Convenience function to convert an SPSS file to XLSForm in one step.
+
+    Args:
+        sav_path (str): Path to the SPSS .sav file
+        output_path (str): Path where the XLSForm Excel file should be saved
+        form_id (str, optional): Unique form identifier
+        form_title (str, optional): Human-readable form title
+
+    Returns:
+        DataToXLSForm: The converter instance (can be used for further inspection)
+
+    Example:
+        >>> converter = spss_to_xlsform('data.sav', 'form.xlsx')
+        >>> print(converter.get_variable_info())
+    """
+    return data_to_xlsform(sav_path, output_path, form_id, form_title, file_type='spss')

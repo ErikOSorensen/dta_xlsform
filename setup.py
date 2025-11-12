@@ -5,10 +5,10 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="dta-xlsform",
-    version="0.1.0",
+    version="0.2.0",
     author="Erik Sorensen",
     author_email="erik.sorensen@gmail.com",
-    description="Convert Stata .dta files to XLSForm format",
+    description="Convert Stata .dta and SPSS .sav files to XLSForm format",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/ErikOSorensen/dta_xlsform",
