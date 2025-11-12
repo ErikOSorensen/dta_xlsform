@@ -48,7 +48,20 @@ class StataToXLSForm:
     def _read_stata_file(self):
         """Read the Stata file and extract metadata."""
         try:
-            self.df, self.metadata = pyreadstat.read_dta(self.dta_path)
+            # Try reading with different encodings to handle Scandinavian and other special characters
+            encodings = ['utf-8', 'windows-1252', 'iso-8859-1', 'latin1']
+
+            for encoding in encodings:
+                try:
+                    self.df, self.metadata = pyreadstat.read_dta(
+                        self.dta_path,
+                        encoding=encoding
+                    )
+                    break  # If successful, exit the loop
+                except (UnicodeDecodeError, Exception) as enc_error:
+                    if encoding == encodings[-1]:  # Last encoding attempt
+                        raise enc_error
+                    continue  # Try next encoding
 
             # Extract variable labels
             if self.metadata.column_names_to_labels:
